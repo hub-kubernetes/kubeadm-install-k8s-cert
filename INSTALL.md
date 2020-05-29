@@ -266,7 +266,7 @@ cfssl gencert \
 -ca=ca.pem \
 -ca-key=ca-key.pem \
 -config=ca-config.json \
--hostname=$mastera_host,$masterb_host,$loadbalancer_host,$mastera_ip,$masterb_ip,$loadbalanccer_ip,127.0.0.1,kubernetes.default \
+-hostname=$mastera_host,$masterb_host,$loadbalancer_host,$mastera_ip,$masterb_ip,$loadbalancer_ip,127.0.0.1,kubernetes.default \
 -profile=kubernetes kubernetes-csr.json | \
 cfssljson -bare kubernetes
 ```
