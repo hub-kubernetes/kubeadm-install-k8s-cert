@@ -485,6 +485,95 @@ export INITIAL_CLUSTER=mastera=https://10.0.1.5:2380,masterb=https://10.0.2.4:23
           
   
   ```
+  
+---
+
+## Initialize master nodes
+
+* STEP 1 - Export the below variables on all the **master nodes**
+
+export mastera_ip=IP OF MASTERA 
+export masterb_ip=IP OF MASTERB
+export loadbalancer_ip=IP OF LOADBALANCER
+
+The configuration should resemble - 
+
+```
+mastera_ip=10.0.1.5
+masterb_ip=10.0.2.4
+loadbalancer_ip=10.0.1.7
+```
+
+* Create a kubeadm cluster configuration file on **both the master nodes**
+
+```
+cat << EOF | tee config.yaml
+apiVersion: kubeadm.k8s.io/v1alpha3
+kind: ClusterConfiguration
+kubernetesVersion: stable
+apiServerCertSANs:
+- ${loadbalancer_ip}
+controlPlaneEndpoint: "${loadbalancer_ip}:6443"
+etcd:
+  external:
+    endpoints:
+    - https://${mastera_ip}:2379
+    - https://${masterb_ip}:2379
+    caFile: /etc/etcd/ca.pem
+    certFile: /etc/etcd/kubernetes.pem
+    keyFile: /etc/etcd/kubernetes-key.pem
+networking:
+  podSubnet: 192.168.0.0/16
+apiServerExtraArgs:
+  apiserver-count: "3"
+
+EOF
+
+```
+
+* Create a directory - `/etc/kubernetes/pki`
+
+```
+mkdir -p /etc/kubernetes/pki
+```
+
+Some ***words of wisdom*** regarding kubeadm certificates - 
+
+kubeadm manages and installs certificates for kubernetes components without any manual intervention. It also possible to use kubeadm to renew certificates if required. The location where kubeadm places the certificates is - `/etc/kubernetes/pki `
+
+If a given certificate and private key pair both exist, and its content is evaluated compliant with the above specs, the existing files will be used and the generation phase for the given certificate skipped. This means the user can, for example, copy an existing CA to `/etc/kubernetes/pki/ca.{crt,key}`, and then kubeadm will use those files for signing the rest of the certs.
+
+Only for the CA, it is possible to provide the `ca.crt` file but not the `ca.key` file, if all other certificates and kubeconfig files already are in place kubeadm recognize this condition and activates the `ExternalCA` , which also implies the `csrsignercontroller` in controller-manager won’t be started
+
+* Log on to loadbalancer node 
+
+* copy ca.crt and ca.key to **ONLY mastera NODE**
+
+On loadbalancer node 
+
+```
+cd certs 
+
+scp ca-key.pem ca.pem mastera:/etc/kubernetes/pki/
+
+```
+
+* Log on to **mastera node**
+
+* Verify the copied certificates 
+
+```
+ls -ltra /etc/kubernetes/pki
+-rw------- 1 root root 1675 May 29 17:24 ca-key.pem
+-rw-r--r-- 1 root root 1363 May 29 17:24 ca.pem
+
+```
+
+* Initialize kubeadm with the config generated 
+
+
+
+
 
 
 
