@@ -508,7 +508,7 @@ loadbalancer_ip=10.0.1.7
 
 ```
 cat << EOF | tee config.yaml
-apiVersion: kubeadm.k8s.io/v1alpha3
+apiVersion: kubeadm.k8s.io/v1beta2
 kind: ClusterConfiguration
 kubernetesVersion: stable
 apiServerCertSANs:
@@ -545,39 +545,217 @@ If a given certificate and private key pair both exist, and its content is evalu
 
 Only for the CA, it is possible to provide the `ca.crt` file but not the `ca.key` file, if all other certificates and kubeconfig files already are in place kubeadm recognize this condition and activates the `ExternalCA` , which also implies the `csrsignercontroller` in controller-manager won’t be started
 
-* Log on to loadbalancer node 
 
-* copy ca.crt and ca.key to **ONLY mastera NODE**
-
-On loadbalancer node 
+We will now create a CA authority for kubernetes that will be used to sign all certificates required for components to work - 
 
 ```
-cd certs 
+cd /etc/kubernetes/pki
+openssl genrsa -out ca.key 2048
+openssl req -x509 -new -nodes -key ca.key -subj "/CN=Kubernetes" -days 10000 -out ca.crt
 
-scp ca-key.pem ca.pem mastera:/etc/kubernetes/pki/
+ls -ltra
+-rw------- 1 root root 1679 May 29 17:52 ca.key
+-rw-r--r-- 1 root root 1115 May 29 17:54 ca.crt
 
 ```
 
-* Log on to **mastera node**
+* Initialize mastera 
 
-* Verify the copied certificates 
+```
+cd 
+kubeadm init --config=config.yaml
+
+```
+
+Your output should look somewhat like -
+
+```
+To start using your cluster, you need to run the following as a regular user:
+
+  mkdir -p $HOME/.kube
+  sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+  sudo chown $(id -u):$(id -g) $HOME/.kube/config
+
+You should now deploy a pod network to the cluster.
+Run "kubectl apply -f [podnetwork].yaml" with one of the options listed at:
+  https://kubernetes.io/docs/concepts/cluster-administration/addons/
+
+You can now join any number of control-plane nodes by copying certificate authorities
+and service account keys on each node and then running the following as root:
+
+  kubeadm join 10.0.1.7:6443 --token 18w9cj.4wewp36o0rugdfss \
+    --discovery-token-ca-cert-hash sha256:f957544240cda3ed215b2dbc301c7127a0528e6d388170ca68c20b60768e4166 \
+    --control-plane
+
+Then you can join any number of worker nodes by running the following on each as root:
+
+kubeadm join 10.0.1.7:6443 --token 18w9cj.4wewp36o0rugdfss \
+    --discovery-token-ca-cert-hash sha256:f957544240cda3ed215b2dbc301c7127a0528e6d388170ca68c20b60768e4166
+```
+
+Preserve this output for now 
+
+* Copy `/etc/kubernetes/pki/*` from mastera to masterb at the location `/etc/kubernetes/pki` 
+
+Since our ssh is setup from loadbalancer node - Log in to loadbalancer node first and copy certificates from mastera to loadbalancer
+
+On **loadbalancer node**
+
+```
+mkdir pki 
+cd pki
+scp mastera:/etc/kubernetes/pki/* .
+```
+
+Remove apiserver certificates 
+
+```
+rm apiserver.*
+```
+
+Copy these certificates from **Loadbalancer** to **masterb** 
+
+```
+cd ~/pki
+scp * masterb:/etc/kubernetes/pki
+```
+
+* Initialize masterb
+
+Log on to masterb node 
+
+Verify certificates 
 
 ```
 ls -ltra /etc/kubernetes/pki
--rw------- 1 root root 1675 May 29 17:24 ca-key.pem
--rw-r--r-- 1 root root 1363 May 29 17:24 ca.pem
 
 ```
 
-* Initialize kubeadm with the config generated 
+Initialize kubeadm
+
+```
+kubeadm init --config=config.yaml
+```
+
+Preserve the output
+
+```
+To start using your cluster, you need to run the following as a regular user:
+
+  mkdir -p $HOME/.kube
+  sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+  sudo chown $(id -u):$(id -g) $HOME/.kube/config
+
+You should now deploy a pod network to the cluster.
+Run "kubectl apply -f [podnetwork].yaml" with one of the options listed at:
+  https://kubernetes.io/docs/concepts/cluster-administration/addons/
+
+You can now join any number of control-plane nodes by copying certificate authorities
+and service account keys on each node and then running the following as root:
+
+  kubeadm join 10.0.1.7:6443 --token lmdhso.86dtbrqhokg1z5n9 \
+    --discovery-token-ca-cert-hash sha256:f957544240cda3ed215b2dbc301c7127a0528e6d388170ca68c20b60768e4166 \
+    --control-plane
+
+Then you can join any number of worker nodes by running the following on each as root:
+
+kubeadm join 10.0.1.7:6443 --token lmdhso.86dtbrqhokg1z5n9 \
+    --discovery-token-ca-cert-hash sha256:f957544240cda3ed215b2dbc301c7127a0528e6d388170ca68c20b60768e4166
+
+```
+
+Take a look at the above output and only select the **join** command for the worker nodes 
+
+```
+kubeadm join 10.0.1.7:6443 --token lmdhso.86dtbrqhokg1z5n9 \
+    --discovery-token-ca-cert-hash sha256:f957544240cda3ed215b2dbc301c7127a0528e6d388170ca68c20b60768e4166
+
+```
+
+---
+
+## Initialize the worker node 
+
+To initialize the worker node - use the command from above and execute it on both the workers 
+
+```
+kubeadm join 10.0.1.7:6443 --token lmdhso.86dtbrqhokg1z5n9 \
+    --discovery-token-ca-cert-hash sha256:f957544240cda3ed215b2dbc301c7127a0528e6d388170ca68c20b60768e4166
+```
+
+your output should be as below - 
+
+```
+This node has joined the cluster:
+* Certificate signing request was sent to apiserver and a response was received.
+* The Kubelet was informed of the new secure connection details.
+
+Run 'kubectl get nodes' on the control-plane to see this node join the cluster.
+
+```
 
 
+## Set up kubectl on control / loadbalancer node 
+
+Log on to loadbalancer node 
+
+Notice the output from the master initialization once again - 
+
+```
+To start using your cluster, you need to run the following as a regular user:
+
+  mkdir -p $HOME/.kube
+  sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+  sudo chown $(id -u):$(id -g) $HOME/.kube/config
+
+```
+
+To initialize the loadbalancer node - 
+
+Firstly,
+
+```
+  mkdir -p $HOME/.kube
+```
+
+Secondly, copy the file /etc/kubernetes/admin.conf from either mastera or masterb to loadbalancer node 
+
+```
+scp  mastera:/etc/kubernetes/admin.conf $HOME/.kube/config
+sudo chown $(id -u):$(id -g) $HOME/.kube/config
+
+```
 
 
+Run you first kubectl command - 
 
+```
+kubectl get nodes 
 
+kubectl get pods --all-namespaces
+```
 
+Notice the nodes in NotReady status - 
 
+```
+kubectl get nodes
+NAME      STATUS     ROLES    AGE     VERSION
+mastera   NotReady   master   45m     v1.17.0
+masterb   NotReady   master   7m4s    v1.17.0
+workera   NotReady   <none>   4m17s   v1.17.0
+workerb   NotReady   <none>   4m18s   v1.17.0
+
+```
+
+---
+
+## CNI installation 
+
+We will use calico for our demo, however there is no restriction to which CNI you prefer 
+
+```
+kubectl apply -f https://docs.projectcalico.org/v3.8/manifests/calico.yaml
+```
 
 
 
