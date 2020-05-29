@@ -463,7 +463,7 @@ export INITIAL_CLUSTER=mastera=https://10.0.1.5:2380,masterb=https://10.0.2.4:23
 
         [Install]
         WantedBy=multi-user.target
-EOF
+  EOF
   ```
   
   * Start ETCD
